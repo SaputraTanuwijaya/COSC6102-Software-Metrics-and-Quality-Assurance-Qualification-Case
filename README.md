@@ -33,7 +33,7 @@ For those who prefer the manual or detailed explanation, read below:
 | Task 2 - NestJS backend, raw SQLite, auto seeding | `src/` (SQL and seeding in `src/database/`) | Done |
 | Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` | Done |
 | Task 4 - K6 load test | `test-load.js` | In progress |
-| Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` | In progress |
+| Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` | Done |
 | Task 6 - Grafana dashboard | `custom-app-dashboard.json` | In progress |
 
 ## HOW TO RUN AND VERIFY
@@ -243,17 +243,63 @@ The participant logs in through `POST /auth/login` first, so D fails on the role
 
 Check that the tests really catch mistakes: in `src/sessions/sessions.controller.ts`, delete the `@Roles('admin')` line above `create`, then run `npm test`. Scenario D fails with `expected 403 "Forbidden", got 201 "Created"`. Put the line back afterwards.
 
+### Part B - Prometheus telemetry (Task 5)
+
+With the app running (`npm run start`), open http://localhost:3030/metrics or run:
+
+```bash
+curl http://localhost:3030/metrics
+```
+
+It returns plain Prometheus text (no login needed). Lines to look for:
+
+```
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 76255232
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 0.094
+# TYPE process_uptime_seconds_total gauge
+process_uptime_seconds_total 4.53
+http_requests_total{method="GET",route="/workshops",status="200"} 3
+```
+
+| Metric | Source |
+|---|---|
+| `process_resident_memory_bytes`, `process_cpu_seconds_total` and other `process_*` / `nodejs_*` metrics | `prom-client` default metrics |
+| `process_uptime_seconds_total` | custom gauge, value is `process.uptime()` |
+| `http_requests_total{method, route, status}` | custom counter, one count per finished HTTP response (including 401 / 403 / 404) |
+
+`prometheus.yml` (repo root) scrapes the app every 5 seconds:
+
+| Setting | Value |
+|---|---|
+| global `scrape_interval` | `5s` |
+| `job_name` | `workshop-registration-api` |
+| job `scrape_interval` | `5s` |
+| target | `localhost:3030`, path `/metrics` |
+
+Start Prometheus **from its own folder** and point it at this file (Prometheus keeps its data in a `data/` folder next to where it starts, which would clash with the app's `data/` folder):
+
+```bash
+cd <your-prometheus-folder>
+./prometheus --config.file="<path-to-this-repo>/prometheus.yml"
+```
+
+Then open http://localhost:9090/targets (Status -> Target health). The `workshop-registration-api` job should show **UP** with a 5s interval. On the Query page, `process_uptime_seconds_total` should return a number that keeps growing.
+
 ## TROUBLESHOOTING
 
 - `EADDRINUSE` on port 3030: another copy of the app is still running. Stop it, or start on another port with `$env:PORT=3031; npm run start` in PowerShell.
 - Selenium cannot start Chrome: install Google Chrome. The first run also needs internet access to download chromedriver.
 - A `[PERFORMANCE]` message on tests 1-3: saucedemo.com took longer than 15s to respond. Check your connection and run again.
 - `npm install` fails on `sqlite3`: use Node.js 20.17 or newer (the prebuilt binary needs it).
+- Prometheus shows the `workshop-registration-api` target as **DOWN**: the app is not running on port 3030. Start it with `npm run start` and wait one scrape (5s).
 
 ## DEPENDENCIES
 
 - Node.js 20.17 or newer with npm (tested on 22.14)
 - Google Chrome
+- Prometheus (tested on 3.15.0)
 
 ## Project Notice
 
