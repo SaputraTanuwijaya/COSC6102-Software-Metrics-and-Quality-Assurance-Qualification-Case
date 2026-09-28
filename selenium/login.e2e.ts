@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import { Builder, By, error, until, WebDriver, WebElement } from 'selenium-webdriver';
 import { Options } from 'selenium-webdriver/chrome';
 
@@ -9,6 +10,16 @@ const EXPECTED_PRODUCT_COUNT = 6;
 const VALID_USER = 'standard_user';
 const LOCKED_USER = 'locked_out_user';
 const PASSWORD = 'secret_sauce';
+
+const DEMO = process.argv.includes('--demo');
+const DEMO_STEP_MS = 1_000;
+const DEMO_HOLD_MS = 3_000;
+
+async function demoPause(driver: WebDriver, ms = DEMO_STEP_MS): Promise<void> {
+  if (DEMO) {
+    await driver.sleep(ms);
+  }
+}
 
 const byTestId = (value: string): By => By.css(`[data-test="${value}"]`);
 
@@ -82,6 +93,7 @@ async function waitVisible(
 
 async function openLoginPage(driver: WebDriver): Promise<void> {
   await step('loading the login page', () => driver.get(BASE_URL));
+  await demoPause(driver);
 }
 
 async function login(
@@ -95,8 +107,10 @@ async function login(
 
   await usernameInput.clear();
   await usernameInput.sendKeys(username);
+  await demoPause(driver);
   await passwordInput.clear();
   await passwordInput.sendKeys(password);
+  await demoPause(driver);
 
   assert.equal(await usernameInput.getProperty('value'), username, 'username field value');
   assert.equal(await passwordInput.getProperty('value'), password, 'password field value');
@@ -165,64 +179,32 @@ async function timeoutDemo(driver: WebDriver): Promise<void> {
   );
 }
 
-type Outcome = 'passed' | 'failed' | 'handler verified' | 'handler NOT verified';
-
-interface Scenario {
-  name: string;
-  run: (driver: WebDriver) => Promise<void>;
-  expectsTimeout?: boolean;
-}
-
-const scenarios: Scenario[] = [
-  { name: '1. Valid login', run: validLogin },
-  {
-    name: '2. Invalid password',
-    run: (driver) =>
-      expectLoginError(driver, VALID_USER, 'wrong_password', /username and password do not match/i),
-  },
-  {
-    name: '3. Locked-out user',
-    run: (driver) => expectLoginError(driver, LOCKED_USER, PASSWORD, /locked out/i),
-  },
-  { name: '4. Timeout handler (15s)', run: timeoutDemo, expectsTimeout: true },
-];
-
-async function runScenario(scenario: Scenario): Promise<Outcome> {
-  console.log(`\n=== ${scenario.name} ===`);
-  let driver: WebDriver | undefined;
+async function withDriver(run: (driver: WebDriver) => Promise<void>): Promise<void> {
+  const driver = await createDriver();
   try {
-    driver = await createDriver();
-    await scenario.run(driver);
-    return scenario.expectsTimeout ? 'handler NOT verified' : 'passed';
-  } catch (err) {
-    if (scenario.expectsTimeout && err instanceof PerformanceTimeout) {
-      return 'handler verified';
-    }
-    console.error(`  FAILED: ${err instanceof Error ? err.message : String(err)}`);
-    return scenario.expectsTimeout ? 'handler NOT verified' : 'failed';
+    await run(driver);
   } finally {
-    if (driver) {
-      await driver.quit();
-      console.log('  session closed');
+    if (DEMO) {
+      console.log(`  closing in ${DEMO_HOLD_MS / 1000}s`);
+      await demoPause(driver, DEMO_HOLD_MS);
     }
+    await driver.quit();
+    console.log('  session closed');
   }
 }
 
-async function main(): Promise<void> {
-  const results: { scenario: string; outcome: Outcome }[] = [];
-  for (const scenario of scenarios) {
-    results.push({ scenario: scenario.name, outcome: await runScenario(scenario) });
-  }
+describe('saucedemo login', () => {
+  it(`1. valid login lands on inventory with ${EXPECTED_PRODUCT_COUNT} products`, () =>
+    withDriver(validLogin));
 
-  console.log('\n=== Summary ===');
-  console.table(results);
+  it('2. invalid password shows credential error', () =>
+    withDriver((driver) =>
+      expectLoginError(driver, VALID_USER, 'wrong_password', /username and password do not match/i),
+    ));
 
-  if (results.some((result) => result.outcome === 'failed')) {
-    process.exitCode = 1;
-  }
-}
+  it('3. locked-out user shows locked-out error', () =>
+    withDriver((driver) => expectLoginError(driver, LOCKED_USER, PASSWORD, /locked out/i)));
 
-main().catch((err: unknown) => {
-  console.error(err);
-  process.exitCode = 1;
+  it('4. 15s timeout handler fires and closes the session', () =>
+    assert.rejects(withDriver(timeoutDemo), PerformanceTimeout));
 });

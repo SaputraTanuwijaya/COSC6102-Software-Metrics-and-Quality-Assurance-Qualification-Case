@@ -13,7 +13,8 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "test": "jest",
-    "test:selenium": "tsx selenium/login.e2e.ts",
+    "test:selenium": "tsx --test-reporter=spec selenium/login.e2e.ts",
+    "test:selenium:demo": "tsx --test-reporter=spec selenium/login.e2e.ts --demo",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "format": "prettier --write \"src/**/*.ts\" \"selenium/**/*.ts\""
   },
