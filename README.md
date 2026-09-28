@@ -31,7 +31,7 @@ For those who prefer the manual or detailed explanation, read below:
 |---|---|---|
 | Task 1 - Selenium login automation | `selenium/login.e2e.ts` | Done |
 | Task 2 - NestJS backend, raw SQLite, auto seeding | `src/` (SQL and seeding in `src/database/`) | Done |
-| Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` | In progress |
+| Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` | Done |
 | Task 4 - K6 load test | `test-load.js` | In progress |
 | Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` | In progress |
 | Task 6 - Grafana dashboard | `custom-app-dashboard.json` | In progress |
@@ -210,6 +210,38 @@ In PowerShell, log in and register like this:
 $token = (Invoke-RestMethod -Method Post http://localhost:3030/auth/login -ContentType 'application/json' -Body '{"email":"budi@workshop.local","password":"Participant123!"}').accessToken
 Invoke-RestMethod -Method Post http://localhost:3030/registrations -Headers @{ Authorization = "Bearer $token" } -ContentType 'application/json' -Body '{"sessionId":4}'
 ```
+
+### Part B - Jest (Task 3)
+
+```bash
+npm test
+```
+
+No server needs to be running. Each run starts the app in memory (`DB_PATH=:memory:`), creates and seeds a fresh database, and never touches `data/app.db`.
+
+Expected result:
+
+```
+PASS src/registrations/registrations.spec.ts
+  Registrations
+    √ A. successful workflow: registering for an open session returns 201 and takes a seat
+    √ B. resource exhaustion: registering for a full session returns 400
+    √ C. not found: requesting a session that does not exist returns 404
+    √ D. access role guard: a participant creating a session returns 403
+
+Tests:       4 passed, 4 total
+```
+
+| Scenario | Request | Asserts |
+|---|---|---|
+| A. Successful workflow | participant `POST /registrations { sessionId: 4 }` | 201, body is the registration, `seats_taken` went up by 1, and a `registered` row exists for that participant in the database |
+| B. Resource exhaustion | participant `POST /registrations { sessionId: 3 }` (full) | 400, and `seats_taken` is still 2 |
+| C. Not found | `GET /sessions/999999` | 404 |
+| D. Access role guard | participant `POST /sessions` with a valid body | 403, and no session was created |
+
+The participant logs in through `POST /auth/login` first, so D fails on the role, not on a missing token.
+
+Check that the tests really catch mistakes: in `src/sessions/sessions.controller.ts`, delete the `@Roles('admin')` line above `create`, then run `npm test`. Scenario D fails with `expected 403 "Forbidden", got 201 "Created"`. Put the line back afterwards.
 
 ## TROUBLESHOOTING
 
