@@ -34,7 +34,7 @@ For those who prefer the manual or detailed explanation, read below:
 | Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` | Done |
 | Task 4 - K6 load test | `test-load.js` | Done |
 | Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` | Done |
-| Task 6 - Grafana dashboard | `custom-app-dashboard.json` | In progress |
+| Task 6 - Grafana dashboard | `custom-app-dashboard.json` | Done |
 
 ## HOW TO RUN AND VERIFY
 
@@ -329,6 +329,24 @@ cd <your-prometheus-folder>
 
 Then open http://localhost:9090/targets (Status -> Target health). The `workshop-registration-api` job should show **UP** with a 5s interval. On the Query page, `process_uptime_seconds_total` should return a number that keeps growing.
 
+### Part B - Grafana dashboard (Task 6)
+
+`custom-app-dashboard.json` (repo root) is the dashboard exported from Grafana 13.2.2 in the classic JSON format, "for sharing externally", so it imports into any Grafana.
+
+| Panel | Visualization | Query | Unit |
+|---|---|---|---|
+| Memory Usage | Gauge (max 512) | `process_resident_memory_bytes{job="workshop-registration-api"} / 1000000` | megabytes (MB) |
+| Process Uptime | Stat | `process_uptime_seconds_total{job="workshop-registration-api"}` | duration (s) |
+| CPU Usage | Time series | `rate(process_cpu_seconds_total{job="workshop-registration-api"}[1m]) * 100` | Percent (0-100) |
+| Request Rate | Time series | `sum(rate(http_requests_total{job="workshop-registration-api"}[1m]))` | requests/sec (rps) |
+
+To see it (with the app and Prometheus running):
+
+1. Start Grafana and open http://localhost:3000 (default login `admin` / `admin`).
+2. **Connections -> Data sources -> Add data source -> Prometheus**, set **Prometheus server URL** to `http://localhost:9090`, then **Save & test**. Expect *"Successfully queried the Prometheus API."*
+3. **Dashboards -> New -> Import**, upload `custom-app-dashboard.json`, pick the Prometheus data source from step 2, then **Import**.
+4. Run `k6 run test-load.js` and watch Request Rate climb to about 100 req/s and CPU Usage rise.
+
 ## TROUBLESHOOTING
 
 - `EADDRINUSE` on port 3030: another copy of the app is still running. Stop it, or start on another port with `$env:PORT=3031; npm run start` in PowerShell.
@@ -343,6 +361,7 @@ Then open http://localhost:9090/targets (Status -> Target health). The `workshop
 - Google Chrome
 - k6 (tested on 2.2.0)
 - Prometheus (tested on 3.15.0)
+- Grafana OSS (tested on 13.2.2)
 
 ## Project Notice
 
