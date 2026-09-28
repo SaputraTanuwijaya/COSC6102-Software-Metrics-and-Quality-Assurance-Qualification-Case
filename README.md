@@ -5,36 +5,55 @@ Submitted by: AT25-1
 Theme: **Workshop & Training Registration**
 
 [QUICK START / VERSI CEPAT]
-Pastiin Node.js (v20.17 ke atas) sama Google Chrome udah ke-install. Terus buka terminal di folder project ini dan jalanin:
-
-```bash
-npm install
-npm run test:selenium:demo
-npm run start
-```
-
-- `npm run test:selenium:demo` -> Part A (Selenium). Chrome bakal kebuka dan jalan pelan-pelan biar keliatan tiap langkahnya.
-- `npm run start` -> Part B (API) nyala di http://localhost:3030
-
-Database-nya otomatis dibikin dan diisi data dummy pas `npm run start` pertama kali, jadi gak perlu setup manual.
+Jalanin pakai "LAUNCH_ME.bat" kalau gamau pusing (literally tinggal double-click).
+Script ini bakal otomatis install dependencies, jalanin Jest test, nyalain API-nya, jalanin Selenium (Chrome kebuka pelan-pelan biar keliatan), terus jalanin load test k6.
 
 PENTING:
-Part A butuh koneksi internet (buka saucedemo.com). Port 3030 harus kosong (Grafana pakai 3000, jadi aman).
+Pastiin Node.js (v20.17 ke atas) sama Google Chrome udah ke-install, dan ada koneksi internet (Selenium buka saucedemo.com).
+Jangan tutup jendela Chrome pas Selenium lagi jalan, test ke-4 emang sengaja nunggu 15 detik.
+API-nya jalan di jendela sendiri ("Workshop Registration API"), tutup jendela itu kalau mau matiin.
 
 ---
 
 For those who prefer the manual or detailed explanation, read below:
 
+## HOW TO RUN
+
+1. Install Node.js 20.17 or newer and Google Chrome.
+2. Double-click `LAUNCH_ME.bat`.
+   (Note: if Windows protects your PC, click 'More info' -> 'Run anyway'.)
+3. Prometheus and Grafana are started separately, see the Task 5 and Task 6 sections below.
+
+## WHAT THE LAUNCHER DOES
+
+1. Checks that Node.js is installed.
+2. Runs `npm install`.
+3. Runs the Jest suite (scenarios A-D).
+4. Starts the API on http://localhost:3030 in its own window (the database is created and seeded automatically), or reuses it if it is already running.
+5. Runs the Selenium demo: Chrome opens and runs the 4 login scenarios slowly enough to watch.
+6. Runs the k6 load test if `k6` is on your PATH (skipped with a message if not).
+7. Opens http://localhost:3030/metrics in your browser.
+
 ## WHAT'S INSIDE
 
-| Case task | Where to look | Status |
-|---|---|---|
-| Task 1 - Selenium login automation | `selenium/login.e2e.ts` | Done |
-| Task 2 - NestJS backend, raw SQLite, auto seeding | `src/` (SQL and seeding in `src/database/`) | Done |
-| Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` | Done |
-| Task 4 - K6 load test | `test-load.js` | Done |
-| Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` | Done |
-| Task 6 - Grafana dashboard | `custom-app-dashboard.json` | Done |
+| Case task | Where to look |
+|---|---|
+| Task 1 - Selenium login automation | `selenium/login.e2e.ts` |
+| Task 2 - NestJS backend, raw SQLite, auto seeding | `src/` (SQL and seeding in `src/database/`) |
+| Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` |
+| Task 4 - K6 load test | `test-load.js` |
+| Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` |
+| Task 6 - Grafana dashboard | `custom-app-dashboard.json` |
+
+## PORTS
+
+| Service | URL |
+|---|---|
+| Workshop Registration API | http://localhost:3030 |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 |
+
+The API uses 3030 because Grafana owns 3000.
 
 ## HOW TO RUN AND VERIFY
 
@@ -81,6 +100,10 @@ Test 1 also prints a table of the 6 product names and prices, and every test pri
 Synchronization: explicit waits with a 15s limit, page load timeout 15s, implicit wait 0. Every test opens its own browser and always closes it.
 
 Check that it really fails when it should: change `EXPECTED_PRODUCT_COUNT` to `7` in `selenium/login.e2e.ts` and run again. Test 1 shows `✖` with `actual: 6, expected: 7`, and the exit code is 1 (`$LASTEXITCODE` in PowerShell). Change it back afterwards.
+
+![Selenium run: 6 products extracted, all 4 tests pass, performance handler fires](docs/selenium.png)
+
+The `ERROR:google_apis\gcm` and `DevTools listening` lines come from Chrome itself (its background services in a fresh test profile), not from the test.
 
 ### Part B - Backend (Task 2)
 
@@ -243,6 +266,8 @@ The participant logs in through `POST /auth/login` first, so D fails on the role
 
 Check that the tests really catch mistakes: in `src/sessions/sessions.controller.ts`, delete the `@Roles('admin')` line above `create`, then run `npm test`. Scenario D fails with `expected 403 "Forbidden", got 201 "Created"`. Put the line back afterwards.
 
+![Jest: scenarios A-D pass](docs/jest.png)
+
 ### Part B - K6 load test (Task 4)
 
 Start the app in one terminal, then run k6 from the repo root in another:
@@ -282,6 +307,8 @@ Expected result (the numbers vary a little per machine):
 k6 exits with code 0 when both thresholds pass and 99 when one fails (`$LASTEXITCODE` in PowerShell).
 
 Check that the thresholds really gate the result: stop the app and run `k6 run test-load.js` again. `http_req_failed` jumps to 100%, the summary shows `✗ 'rate<0.02'`, and k6 exits with 99. To target another host or port, use `k6 run -e BASE_URL=http://localhost:3031 test-load.js`.
+
+![k6: both thresholds pass](docs/k6-thresholds.png)
 
 If Prometheus is running during the test, the request spike (about 100 req/s) shows up in `http_requests_total` and in the Grafana Request Rate panel.
 
@@ -329,6 +356,8 @@ cd <your-prometheus-folder>
 
 Then open http://localhost:9090/targets (Status -> Target health). The `workshop-registration-api` job should show **UP** with a 5s interval. On the Query page, `process_uptime_seconds_total` should return a number that keeps growing.
 
+![Prometheus target health: workshop-registration-api UP](docs/prometheus-targets.png)
+
 ### Part B - Grafana dashboard (Task 6)
 
 `custom-app-dashboard.json` (repo root) is the dashboard exported from Grafana 13.2.2 in the classic JSON format, "for sharing externally", so it imports into any Grafana.
@@ -347,10 +376,18 @@ To see it (with the app and Prometheus running):
 3. **Dashboards -> New -> Import**, upload `custom-app-dashboard.json`, pick the Prometheus data source from step 2, then **Import**.
 4. Run `k6 run test-load.js` and watch Request Rate climb to about 100 req/s and CPU Usage rise.
 
+![Grafana data source: Successfully queried the Prometheus API](docs/grafana-datasource.png)
+
+![Grafana dashboard during a k6 run: memory, uptime, CPU and request-rate spike](docs/grafana-dashboard.png)
+
+These panels show the **API process itself**, not the whole laptop: the memory and CPU used by the Node.js process that runs the API, how long it has been running, and how many HTTP requests it answered. The CPU and Request Rate spikes line up with the k6 run.
+
 ## TROUBLESHOOTING
 
 - `EADDRINUSE` on port 3030: another copy of the app is still running. Stop it, or start on another port with `$env:PORT=3031; npm run start` in PowerShell.
 - Selenium cannot start Chrome: install Google Chrome. The first run also needs internet access to download chromedriver.
+- A Selenium test fails with `NoSuchSessionError` / "browser has closed the connection": the Chrome window was closed while the test was still running. Test 4 deliberately waits 15s on the login page, so leave the windows alone until each one closes by itself.
+- `LAUNCH_ME.bat` closes immediately or is blocked: right-click it and choose "Run as administrator", or run the commands from the sections above in a terminal.
 - A `[PERFORMANCE]` message on tests 1-3: saucedemo.com took longer than 15s to respond. Check your connection and run again.
 - `npm install` fails on `sqlite3`: use Node.js 20.17 or newer (the prebuilt binary needs it).
 - Prometheus shows the `workshop-registration-api` target as **DOWN**: the app is not running on port 3030. Start it with `npm run start` and wait one scrape (5s).
