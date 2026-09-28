@@ -30,7 +30,7 @@ For those who prefer the manual or detailed explanation, read below:
 | Case task | Where to look | Status |
 |---|---|---|
 | Task 1 - Selenium login automation | `selenium/login.e2e.ts` | Done |
-| Task 2 - NestJS backend, raw SQLite, auto seeding | `src/` (SQL and seeding in `src/database/`) | Database done, endpoints in progress |
+| Task 2 - NestJS backend, raw SQLite, auto seeding | `src/` (SQL and seeding in `src/database/`) | Done |
 | Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` | In progress |
 | Task 4 - K6 load test | `test-load.js` | In progress |
 | Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` | In progress |
@@ -101,6 +101,7 @@ On every later start it says `Existing data in data/app.db` with the same counts
 |---|---|---|
 | Port | `3030` | `PORT` |
 | Database file | `data/app.db` | `DB_PATH` |
+| JWT signing secret | a development default | `JWT_SECRET` |
 
 #### Seed accounts
 
@@ -167,6 +168,48 @@ A user can register for a session only once (`UNIQUE (session_id, user_id)`).
 |---|---|---|
 | 3 | 2 / 2 | Full, used for the "session is full" (400) case |
 | 7 | 0 / 40 | Status `cancelled`, used for the "not open" (400) case |
+
+#### Endpoints
+
+Authentication is **JWT**: log in with `POST /auth/login`, then send `Authorization: Bearer <accessToken>`. Tokens expire after 1 hour. Missing, invalid or expired token -> 401. Wrong role -> 403.
+
+| Method + path | Access | Success | Errors |
+|---|---|---|---|
+| `POST /auth/login` `{ email, password }` | public | 200 `{ accessToken }` | 400 bad input, 401 wrong credentials |
+| `GET /workshops` | public | 200 catalog with instructor and sessions (incl. `seatsLeft`) | - |
+| `GET /sessions/:id` | public | 200 session | 400 bad id, 404 not found |
+| `POST /sessions` `{ workshopId, startsAt, location, capacity }` | admin | 201 session | 400 bad input, 403 not admin, 404 workshop not found |
+| `DELETE /sessions/:id` | admin | 204 | 403 not admin, 404 not found, 409 session has registrations |
+| `POST /registrations` `{ sessionId }` | participant | 201 registration, seat taken | 400 full / not open / bad input, 403 not participant, 404 session not found, 409 already registered |
+| `PATCH /registrations/:id/cancel` | owner | 200 registration, seat freed | 403 not the owner, 404 not found, 409 not `registered` |
+| `PATCH /registrations/:id/attend` | admin | 200 registration | 403 not admin, 404 not found, 409 not `registered` |
+
+Every write runs inside a database transaction. Registering takes a seat with one conditional `UPDATE ... WHERE seats_taken < capacity`, so two people can never get the last seat.
+
+Validation is manual (no `class-validator`): ids must be positive integers, `startsAt` must be an ISO 8601 date-time with a timezone and in the future, `location` 1-100 characters, `capacity` an integer from 1 to 500. Anything else returns 400 with a message naming the field.
+
+#### Try it yourself
+
+In Git Bash (with the app running):
+
+```bash
+TOKEN=$(curl -s -X POST localhost:3030/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"budi@workshop.local","password":"Participant123!"}' | sed -E 's/.*"accessToken":"([^"]+)".*/\1/')
+
+curl -i -X POST localhost:3030/registrations -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"sessionId":4}'
+curl -i -X POST localhost:3030/registrations -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"sessionId":3}'
+curl -i localhost:3030/sessions/999999
+curl -i -X POST localhost:3030/sessions -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}'
+```
+
+Expected: `201 Created`, then `400` (session 3 is full), then `404`, then `403` (budi is not an admin). Run the first registration twice and the second attempt returns `409`.
+
+In PowerShell, log in and register like this:
+
+```powershell
+$token = (Invoke-RestMethod -Method Post http://localhost:3030/auth/login -ContentType 'application/json' -Body '{"email":"budi@workshop.local","password":"Participant123!"}').accessToken
+Invoke-RestMethod -Method Post http://localhost:3030/registrations -Headers @{ Authorization = "Bearer $token" } -ContentType 'application/json' -Body '{"sessionId":4}'
+```
 
 ## TROUBLESHOOTING
 
