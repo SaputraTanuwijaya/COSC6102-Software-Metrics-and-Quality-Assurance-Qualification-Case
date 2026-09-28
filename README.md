@@ -32,7 +32,7 @@ For those who prefer the manual or detailed explanation, read below:
 | Task 1 - Selenium login automation | `selenium/login.e2e.ts` | Done |
 | Task 2 - NestJS backend, raw SQLite, auto seeding | `src/` (SQL and seeding in `src/database/`) | Done |
 | Task 3 - Jest suite (201 / 400 / 404 / 403) | `src/registrations/registrations.spec.ts` | Done |
-| Task 4 - K6 load test | `test-load.js` | In progress |
+| Task 4 - K6 load test | `test-load.js` | Done |
 | Task 5 - Prometheus telemetry | `GET /metrics`, `prometheus.yml` | Done |
 | Task 6 - Grafana dashboard | `custom-app-dashboard.json` | In progress |
 
@@ -243,6 +243,48 @@ The participant logs in through `POST /auth/login` first, so D fails on the role
 
 Check that the tests really catch mistakes: in `src/sessions/sessions.controller.ts`, delete the `@Roles('admin')` line above `create`, then run `npm test`. Scenario D fails with `expected 403 "Forbidden", got 201 "Created"`. Put the line back afterwards.
 
+### Part B - K6 load test (Task 4)
+
+Start the app in one terminal, then run k6 from the repo root in another:
+
+```bash
+npm run start
+```
+
+```bash
+k6 run test-load.js
+```
+
+| Stage | Duration | Virtual users |
+|---|---|---|
+| Ramp-up | 15s | 0 -> 50 |
+| Steady load | 30s | 50 |
+| Ramp-down | 15s | 50 -> 0 |
+
+Each virtual user calls `GET /workshops` (the public catalog), checks the response, then waits 0.5s (think time), so the peak load is about 100 requests per second.
+
+Expected result (the numbers vary a little per machine):
+
+```
+  █ THRESHOLDS
+
+    http_req_duration
+    ✓ 'p(95)<250' p(95)=2.21ms
+
+    http_req_failed
+    ✓ 'rate<0.02' rate=0.00%
+
+    ✓ status is 200
+    ✓ body is the workshop catalog
+    http_reqs......................: 4525   75.1/s
+```
+
+k6 exits with code 0 when both thresholds pass and 99 when one fails (`$LASTEXITCODE` in PowerShell).
+
+Check that the thresholds really gate the result: stop the app and run `k6 run test-load.js` again. `http_req_failed` jumps to 100%, the summary shows `✗ 'rate<0.02'`, and k6 exits with 99. To target another host or port, use `k6 run -e BASE_URL=http://localhost:3031 test-load.js`.
+
+If Prometheus is running during the test, the request spike (about 100 req/s) shows up in `http_requests_total` and in the Grafana Request Rate panel.
+
 ### Part B - Prometheus telemetry (Task 5)
 
 With the app running (`npm run start`), open http://localhost:3030/metrics or run:
@@ -299,6 +341,7 @@ Then open http://localhost:9090/targets (Status -> Target health). The `workshop
 
 - Node.js 20.17 or newer with npm (tested on 22.14)
 - Google Chrome
+- k6 (tested on 2.2.0)
 - Prometheus (tested on 3.15.0)
 
 ## Project Notice
